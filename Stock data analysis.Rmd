@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Now, we have to install all of these required packages.
+```{r}
+install.packages("quantmod")
+install.packages("xts")
+install.packages("zoo")
+install.packages("TTR")
+install.packages("dplyr")
+install.packages("tidyr")
+
+```
+
+Let's get stock data for Facebook.
+So the getSymbols function automatically downloaded daily data going all the way back to when Facebook just IPOs.
+```{r}
+library(quantmod)
+getSymbols(c("FB"))
+barChart(FB,theme='white.mono',bar.type='hlc')
+```
+
+Let's see how easy it is to display a full stock chart (S&P 500) with indicators. 
+
+Quantmod uses Yahoo to get it's financial data. In the following example ^GSPC represents the S&P 500 Index.
+
+chartSeries - is straightforward and will plot whatever shybol has been downloaded to memory using 'getSymbols'
+
+addBBands - will plot Bollinger Bands around price series.
+```{r}
+getSymbols(c("^GSPC"))
+chartSeries(GSPC,subset='last 3 months')
+addBBands(n=20,sd=2,ma="SMA",draw='bands',on=-1)
+```
+
+Now, we will moving deeper into analysis part.
+
+```{r}
+Nasdaq100_Symbols <- c('AAPL', 'AMZN')
+stocks <- getSymbols(Nasdaq100_Symbols)
+```
+
+Since the stock data is separate for each stock I will combine them in a matrix named df, and also combine the column names in a separate list as this will be useful in understanding the data
+```{r}
+cols = list()
+df <- matrix(data = NA, ncol = 6*length(stocks), nrow = dim(get(stocks[1]))[1])
+for(i in 1:length(stocks)){
+  in1 <- 6*(i-1)+1
+  in2 <- 6*i
+  df[,in1:in2] <- get(stocks[i])
+  cols <- c(cols, colnames(get(stocks[i])))
+}
+colnames(df) <- cols
+```
+
+Next row names are added and a separate column for the date is added, labelled, and the matrix is converted to a data frame
+```{r}
+rownames(df)<- as.character.Date(index(get(stocks[1])))
+df.dates <- as.data.frame(cbind(as.character.Date(index(get(stocks[1]))), df))
+colnames(df.dates)[1] <- 'Date'
+head(df.dates)
+```
+
+Now we will tidy the data using dplyr and tidyr to only include the data we are interested in. Here we will just take the adjusted values.
+```{r}
+tidy_stocks <- as.data.frame(df.dates) %>% 
+  select(Date, contains('Adjusted')) %>% 
+  gather(Index, Price, -Date) 
+head(tidy_stocks)
+```
+
+Now, we will calculate the return on price.
+The reason why we use Log return is because:
+In general, while stock returns are not exactly normal, that is much closer to being the case. We use log return to assume the prices themselves are normal.
+```{r}
+stock_returns <- tidy_stocks %>%
+  mutate(Simple.return = ifelse(lag(Index)==Index,(as.numeric(Price)-as.numeric(lag(Price)))/(as.numeric(lag(Price))),0)) %>%
+  mutate(Log.return = ifelse(lag(Index)==Index,(log(as.numeric(Price))-log(as.numeric(lag(Price)))),0))
+head(stock_returns)
+```
+
+Now, we will plot the stock price and return for Apple inc.
+```{r}
+library(ggplot2)
+aapl_returns <- stock_returns %>% filter(grepl('AAPL',Index)) %>% select(-Index)
+head(aapl_returns)
+```
+
+plot 1
+```{r}
+plot1 <- ggplot(data = aapl_returns, aes(x = Date, y = as.numeric(Price), group = 1))+geom_line()+ geom_point(color="blue")
+plot1 + ggtitle('Price over time')
+```
+
+plot 2
+
+
+```{r}
+plot2 <- ggplot(data = aapl_returns, aes(x = Date, y = Log.return, group = 1)) + geom_line() 
+plot2 + ggtitle('Log return over time')
+```
+plot 3
+```{r}
+plot3 <- ggplot(data = aapl_returns, aes(Log.return)) + geom_histogram(bins = 70)
+plot3 + ggtitle('Histogram of the Log return')
+```
+We can see that stock of Apple has increased steadily over the course of the dataset, since the beginning of 2007. Also from the histogram of the daily log return we can see that the center of this distribution is almost around zero, which agrees with intuition, that on average if you invested in Apple for one day there would likely not be much return.
+```{r}
+meanDist.daily <- mean(na.omit(aapl_returns$Log.return))
+meanDist.yearly <- meanDist.daily * 252
+meanDist.daily
+```
+Let's see its yearly return (252 trading days in a year)
+```{r}
+meanDist.yearly
+```
+
+
+
